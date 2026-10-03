@@ -12,7 +12,6 @@ import {
 
 export default function StoreCatalogScreen({
   listings = [],
-  productSummaries = [],
   onSelectListing,
   onBackToHome,
   onOpenCart,
@@ -21,14 +20,74 @@ export default function StoreCatalogScreen({
   onQuickAddToCart,
 }) {
   const [searchQuery, setSearchQuery] = useState("");
-  const [selectedProductFilter, setSelectedProductFilter] = useState("all");
   const [selectedPlatformFilter, setSelectedPlatformFilter] = useState("all");
   const [riskFilter, setRiskFilter] = useState("all"); // 'all', 'low', 'medium', 'high'
   const [inStockOnly, setInStockOnly] = useState(false);
   const [sortBy, setSortBy] = useState("sold_desc"); // 'sold_desc', 'price_asc', 'price_desc', 'rating_desc', 'risk_asc'
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 12;
 
   const formatBDT = (amount) => {
     return `৳${Number(amount || 0).toLocaleString("en-BD", { maximumFractionDigits: 0 })}`;
+  };
+
+  const editDistance = (left, right) => {
+    const previous = Array.from({ length: right.length + 1 }, (_, index) => index);
+    for (let i = 1; i <= left.length; i += 1) {
+      const current = [i];
+      for (let j = 1; j <= right.length; j += 1) {
+        current[j] = Math.min(current[j - 1] + 1, previous[j] + 1, previous[j - 1] + (left[i - 1] === right[j - 1] ? 0 : 1));
+      }
+      previous.splice(0, previous.length, ...current);
+    }
+    return previous[right.length];
+  };
+
+  const normalizeSearchText = (value) =>
+    String(value || "")
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, " ")
+      .trim();
+
+  const fuzzyScore = (query, item) => {
+    const terms = normalizeSearchText(query).split(" ").filter(Boolean);
+    const fields = [
+      item.product_title,
+      item.model_id,
+      item.seller_name,
+      item.platform_name,
+      item.product_id,
+      item.seller_id,
+    ].map(normalizeSearchText);
+    const text = fields.join(" ");
+    const words = text.split(" ").filter(Boolean);
+    let score = 0;
+
+    for (const term of terms) {
+      const exactFieldIndex = fields.findIndex((field) => field === term);
+      if (exactFieldIndex >= 0) {
+        score += 300 - exactFieldIndex * 10;
+        continue;
+      }
+
+      const prefixFieldIndex = fields.findIndex((field) =>
+        field.split(" ").some((word) => word.startsWith(term)),
+      );
+      if (prefixFieldIndex >= 0) {
+        score += 180 - prefixFieldIndex * 10;
+        continue;
+      }
+
+      if (text.includes(term)) {
+        score += 100 - text.indexOf(term) / 100;
+        continue;
+      }
+
+      const closest = Math.min(...words.map((word) => editDistance(term, word)));
+      if (closest > Math.max(1, Math.floor(term.length / 3))) return -1;
+      score += 40 - closest * 10;
+    }
+    return score;
   };
 
   const renderRiskBadge = (risk) => {
@@ -62,22 +121,12 @@ export default function StoreCatalogScreen({
     let result = [...listings];
 
     // Search filter
-    if (searchQuery) {
-      const q = searchQuery.toLowerCase();
-      result = result.filter(
-        (item) =>
-          item.product_title.toLowerCase().includes(q) ||
-          item.seller_name.toLowerCase().includes(q) ||
-          item.platform_name.toLowerCase().includes(q) ||
-          item.product_id.toString().includes(q) ||
-          item.seller_id.toString().includes(q) ||
-          item.price_bdt.toString().includes(q),
-      );
-    }
-
-    // Product ID filter
-    if (selectedProductFilter !== "all") {
-      result = result.filter((item) => item.product_id === Number(selectedProductFilter));
+    if (searchQuery.trim()) {
+      result = result
+        .map((item) => ({ item, score: fuzzyScore(searchQuery, item) }))
+        .filter(({ score }) => score >= 0)
+        .sort((left, right) => right.score - left.score)
+        .map(({ item }) => item);
     }
 
     // Platform ID filter
@@ -96,6 +145,9 @@ export default function StoreCatalogScreen({
     }
 
     // Sorting
+    if (searchQuery.trim() && sortBy === "sold_desc") {
+      return result;
+    }
     if (sortBy === "price_asc") {
       result.sort((a, b) => a.total_cost_bdt - b.total_cost_bdt);
     } else if (sortBy === "price_desc") {
@@ -109,7 +161,11 @@ export default function StoreCatalogScreen({
     }
 
     return result;
-  }, [listings, searchQuery, selectedProductFilter, selectedPlatformFilter, riskFilter, inStockOnly, sortBy]);
+  }, [listings, searchQuery, selectedPlatformFilter, riskFilter, inStockOnly, sortBy]);
+
+  const totalPages = Math.max(1, Math.ceil(filteredListings.length / itemsPerPage));
+  const pageStart = (currentPage - 1) * itemsPerPage;
+  const visibleListings = filteredListings.slice(pageStart, pageStart + itemsPerPage);
 
   // Product color badge helpers
   const getProductColor = (pid) => {
@@ -144,7 +200,7 @@ export default function StoreCatalogScreen({
                 <h1 className="text-sm font-black text-slate-900 leading-tight flex items-center space-x-1">
                   <span>upay Store</span>
                   <span className="text-[10px] bg-blue-100 text-blue-800 font-bold px-1.5 py-0.2 rounded-sm">
-                    CSV Listings
+                    ML Risk Scores
                   </span>
                 </h1>
                 <p className="text-[10px] text-slate-500 font-medium">Multi-Seller Marketplace</p>
@@ -181,14 +237,20 @@ export default function StoreCatalogScreen({
           <input
             type="text"
             value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Search by Product ID, Seller ID, Platform..."
+            onChange={(e) => {
+              setSearchQuery(e.target.value);
+              setCurrentPage(1);
+            }}
+            placeholder="Search products, models, sellers, or platforms..."
             className="w-full bg-slate-100 text-xs text-slate-800 rounded-xl pl-9 pr-3 py-2 border border-slate-200 focus:outline-hidden focus:ring-2 focus:ring-[#0050A0] focus:bg-white transition"
           />
           <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
           {searchQuery && (
             <button
-              onClick={() => setSearchQuery("")}
+              onClick={() => {
+                setSearchQuery("");
+                setCurrentPage(1);
+              }}
               className="absolute right-3 top-2.5 text-xs text-slate-400 hover:text-slate-600 font-bold"
             >
               ✕
@@ -196,32 +258,6 @@ export default function StoreCatalogScreen({
           )}
         </div>
 
-        {/* Product ID Filter Pills */}
-        <div className="flex space-x-1.5 overflow-x-auto py-2 no-scrollbar text-xs">
-          <button
-            onClick={() => setSelectedProductFilter("all")}
-            className={`px-3 py-1 rounded-full text-[11px] font-bold whitespace-nowrap transition ${
-              selectedProductFilter === "all"
-                ? "bg-[#0050A0] text-white shadow-xs"
-                : "bg-slate-100 text-slate-600 hover:bg-slate-200"
-            }`}
-          >
-            All Products ({listings.length})
-          </button>
-          {[1, 2, 3, 4, 5].map((pid) => (
-            <button
-              key={pid}
-              onClick={() => setSelectedProductFilter(pid.toString())}
-              className={`px-3 py-1 rounded-full text-[11px] font-bold whitespace-nowrap transition ${
-                selectedProductFilter === pid.toString()
-                  ? "bg-[#0050A0] text-white shadow-xs"
-                  : "bg-slate-100 text-slate-600 hover:bg-slate-200"
-              }`}
-            >
-              Product #{pid}
-            </button>
-          ))}
-        </div>
       </div>
 
       {/* 2. Sub-filters & Sort Bar */}
@@ -230,7 +266,10 @@ export default function StoreCatalogScreen({
           {/* Platform Filter */}
           <select
             value={selectedPlatformFilter}
-            onChange={(e) => setSelectedPlatformFilter(e.target.value)}
+            onChange={(e) => {
+              setSelectedPlatformFilter(e.target.value);
+              setCurrentPage(1);
+            }}
             className="bg-slate-50 border border-slate-200 text-[11px] font-semibold text-slate-700 rounded-md px-1.5 py-1 focus:outline-hidden"
           >
             <option value="all">Platform: All</option>
@@ -242,7 +281,10 @@ export default function StoreCatalogScreen({
           {/* Risk Filter */}
           <select
             value={riskFilter}
-            onChange={(e) => setRiskFilter(e.target.value)}
+            onChange={(e) => {
+              setRiskFilter(e.target.value);
+              setCurrentPage(1);
+            }}
             className="bg-slate-50 border border-slate-200 text-[11px] font-semibold text-slate-700 rounded-md px-1.5 py-1 focus:outline-hidden"
           >
             <option value="all">Risk: All</option>
@@ -255,7 +297,10 @@ export default function StoreCatalogScreen({
         {/* Sort Selector */}
         <select
           value={sortBy}
-          onChange={(e) => setSortBy(e.target.value)}
+          onChange={(e) => {
+            setSortBy(e.target.value);
+            setCurrentPage(1);
+          }}
           className="bg-slate-50 border border-slate-200 text-[11px] font-semibold text-slate-700 rounded-md px-1.5 py-1 focus:outline-hidden"
         >
           <option value="sold_desc">Items Sold (High to Low)</option>
@@ -266,47 +311,21 @@ export default function StoreCatalogScreen({
         </select>
       </div>
 
-      {/* 3. Products Quick Stats Summary from CSV */}
-      {selectedProductFilter === "all" && productSummaries.length > 0 && (
-        <div className="px-3.5 pt-3">
-          <div className="bg-gradient-to-r from-blue-900 to-slate-900 rounded-2xl p-3 text-white shadow-sm space-y-2">
-            <div className="flex items-center justify-between">
-              <span className="text-[10px] font-bold text-amber-300 uppercase tracking-wider">
-                CSV Dataset Overview (2,734 Listings)
-              </span>
-              <span className="text-[10px] text-slate-300">5 Products</span>
-            </div>
-            <div className="grid grid-cols-5 gap-1 text-center">
-              {productSummaries.map((p) => (
-                <button
-                  key={p.product_id}
-                  onClick={() => setSelectedProductFilter(p.product_id.toString())}
-                  className="bg-white/10 hover:bg-white/20 p-1.5 rounded-xl transition"
-                >
-                  <p className="text-[10px] font-bold text-amber-200">Prod #{p.product_id}</p>
-                  <p className="text-[9px] font-medium text-slate-200">
-                    {formatBDT(p.product_average_price_bdt)}
-                  </p>
-                  <p className="text-[8px] text-slate-400">{p.total_listings} offers</p>
-                </button>
-              ))}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* 4. Outer Overview / Item Listings List */}
+      {/* Item listings */}
       {/* "and the outer overview/list when an user is viewing all the items would have items sold and the price of the item." */}
       <div className="p-3.5 space-y-3">
         <div className="flex items-center justify-between text-xs text-slate-500 font-medium px-1">
           <span>
-            Showing <strong>{filteredListings.length}</strong> item listings
+            Showing <strong>{filteredListings.length === 0 ? 0 : pageStart + 1}-{Math.min(pageStart + itemsPerPage, filteredListings.length)}</strong> of <strong>{filteredListings.length}</strong> listings
           </span>
           <label className="flex items-center space-x-1 text-slate-700 cursor-pointer">
             <input
               type="checkbox"
               checked={inStockOnly}
-              onChange={(e) => setInStockOnly(e.target.checked)}
+              onChange={(e) => {
+                setInStockOnly(e.target.checked);
+                setCurrentPage(1);
+              }}
               className="rounded text-[#0050A0]"
             />
             <span className="text-[11px] font-semibold">In Stock Only</span>
@@ -314,7 +333,7 @@ export default function StoreCatalogScreen({
         </div>
 
         <div className="space-y-3">
-          {filteredListings.slice(0, 50).map((item) => {
+          {visibleListings.map((item) => {
             const devPct = item.price_deviation_percent;
 
             return (
@@ -331,7 +350,7 @@ export default function StoreCatalogScreen({
                         item.product_id,
                       )}`}
                     >
-                      Product #{item.product_id}
+                      {item.product_title}
                     </span>
                     <span className="text-xs font-bold text-slate-700">
                       Seller #{item.seller_id}
@@ -344,7 +363,7 @@ export default function StoreCatalogScreen({
 
                 {/* Sub-info: Platform & Rating */}
                 <div className="mt-1 flex items-center justify-between text-[11px] text-slate-500">
-                  <span>Platform #{item.platform_id}</span>
+                  <span>{item.platform_name}</span>
                   <div className="flex items-center space-x-1 text-amber-500 font-bold">
                     <Star className="w-3.5 h-3.5 fill-current" />
                     <span>{item.all_time_rating}.0</span>
@@ -438,6 +457,34 @@ export default function StoreCatalogScreen({
             );
           })}
         </div>
+
+        {filteredListings.length === 0 && (
+          <div className="rounded-2xl border border-dashed border-slate-300 bg-white p-8 text-center text-sm text-slate-500">
+            No listings match this search or filter.
+          </div>
+        )}
+
+        {filteredListings.length > 0 && (
+          <nav className="flex items-center justify-between border-t border-slate-200 pt-3" aria-label="Listing pages">
+            <button
+              type="button"
+              onClick={() => setCurrentPage((page) => Math.max(1, page - 1))}
+              disabled={currentPage === 1}
+              className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-bold text-slate-700 disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              Previous
+            </button>
+            <span className="text-xs font-semibold text-slate-500">Page {currentPage} of {totalPages}</span>
+            <button
+              type="button"
+              onClick={() => setCurrentPage((page) => Math.min(totalPages, page + 1))}
+              disabled={currentPage === totalPages}
+              className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-bold text-slate-700 disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              Next
+            </button>
+          </nav>
+        )}
       </div>
     </div>
   );

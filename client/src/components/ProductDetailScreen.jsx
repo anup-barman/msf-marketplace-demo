@@ -33,6 +33,7 @@ export default function ProductDetailScreen({
 }) {
   const [quantity, setQuantity] = useState(1);
   const [showBetterDealsModal, setShowBetterDealsModal] = useState(false);
+  const [betterDealsPage, setBetterDealsPage] = useState(1);
 
   if (!listing) {
     return (
@@ -70,6 +71,16 @@ export default function ProductDetailScreen({
 
   const betterDeals = listing.better_deals || [];
   const hasBetterDeals = betterDeals.length > 0;
+  const betterDealsPerPage = 6;
+  const betterDealsTotalPages = Math.max(1, Math.ceil(betterDeals.length / betterDealsPerPage));
+  const visibleBetterDeals = betterDeals.slice(
+    (betterDealsPage - 1) * betterDealsPerPage,
+    betterDealsPage * betterDealsPerPage,
+  );
+  const openBetterDeals = () => {
+    setBetterDealsPage(1);
+    setShowBetterDealsModal(true);
+  };
   const maxSavings = hasBetterDeals
     ? Math.max(...betterDeals.map((d) => d.savings_bdt || 0))
     : 0;
@@ -120,7 +131,7 @@ export default function ProductDetailScreen({
 
         <div className="flex items-center space-x-1.5">
           <button
-            onClick={() => showToast(`Listing link for Product #${listing.product_id} copied!`)}
+            onClick={() => showToast(`Listing link for ${listing.product_title} copied!`)}
             className="w-8 h-8 rounded-full bg-slate-100 hover:bg-slate-200 flex items-center justify-center text-slate-600 transition"
           >
             <Share2 className="w-3.5 h-3.5" />
@@ -151,7 +162,7 @@ export default function ProductDetailScreen({
               <span className="bg-white/20 backdrop-blur-xs text-[10px] font-black px-2.5 py-0.5 rounded-full uppercase tracking-wider">
                 CSV Marketplace Listing
               </span>
-              <h1 className="text-2xl font-black mt-1">Product #{listing.product_id}</h1>
+              <h1 className="text-2xl font-black mt-1">{listing.product_title}</h1>
             </div>
             <span className="bg-white text-slate-900 text-[10px] font-extrabold px-2 py-0.5 rounded-full shadow">
               {listing.seller_name}
@@ -359,7 +370,7 @@ export default function ProductDetailScreen({
 
               <div>
                 <h4 className="text-sm font-black leading-tight">
-                  Better deal available for Product #{listing.product_id}!
+                  Better deal available for {listing.product_title}!
                 </h4>
                 <p className="text-[11px] text-amber-100 mt-0.5">
                   Save up to {formatBDT(maxSavings)} from other sellers who offer better prices or lower risk scores.
@@ -368,7 +379,7 @@ export default function ProductDetailScreen({
 
               {/* Extra option button as requested */}
               <button
-                onClick={() => setShowBetterDealsModal(true)}
+                onClick={openBetterDeals}
                 className="w-full bg-white hover:bg-amber-50 active:scale-98 text-slate-900 font-extrabold text-xs py-2.5 px-3 rounded-xl shadow-md transition flex items-center justify-center space-x-1.5"
               >
                 <span>View All Better Deals & Seller Risk Scores ({betterDeals.length})</span>
@@ -383,9 +394,9 @@ export default function ProductDetailScreen({
               <Check className="w-4 h-4 text-emerald-700" />
             </div>
             <div>
-              <p className="text-xs font-bold">Best Available Deal!</p>
+              <p className="text-xs font-bold">No better comparable offer found</p>
               <p className="text-[10px] text-emerald-700">
-                You are currently viewing the most competitive deal for Product #{listing.product_id}.
+                No same-model listing currently meets the lower-price or lower-risk criteria.
               </p>
             </div>
           </div>
@@ -463,7 +474,7 @@ export default function ProductDetailScreen({
                 <div className="flex items-center space-x-1.5">
                   <Flame className="w-4 h-4 text-orange-500 fill-current" />
                   <h3 className="text-sm font-black text-slate-900">
-                    Better Deals for Product #{listing.product_id}
+                    Better Deals for {listing.product_title}
                   </h3>
                 </div>
                 <p className="text-[11px] text-slate-500">
@@ -493,7 +504,7 @@ export default function ProductDetailScreen({
 
             {/* List of Better Deals with Risk Scores */}
             <div className="p-4 space-y-3 overflow-y-auto flex-1">
-              {betterDeals.map((deal) => {
+              {visibleBetterDeals.map((deal) => {
                 const dealRisk = deal.seller_risk || {};
                 const dealTotal = deal.total_cost_bdt || deal.price_bdt + deal.shipping_cost_bdt;
 
@@ -604,6 +615,30 @@ export default function ProductDetailScreen({
                   </div>
                 );
               })}
+
+              {betterDeals.length > betterDealsPerPage && (
+                <nav className="flex items-center justify-between border-t border-slate-200 pt-3" aria-label="Better deal pages">
+                  <button
+                    type="button"
+                    onClick={() => setBetterDealsPage((page) => Math.max(1, page - 1))}
+                    disabled={betterDealsPage === 1}
+                    className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-bold text-slate-700 disabled:cursor-not-allowed disabled:opacity-40"
+                  >
+                    Previous
+                  </button>
+                  <span className="text-xs font-semibold text-slate-500">
+                    Page {betterDealsPage} of {betterDealsTotalPages}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setBetterDealsPage((page) => Math.min(betterDealsTotalPages, page + 1))}
+                    disabled={betterDealsPage === betterDealsTotalPages}
+                    className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-bold text-slate-700 disabled:cursor-not-allowed disabled:opacity-40"
+                  >
+                    Next
+                  </button>
+                </nav>
+              )}
             </div>
           </div>
         </div>
@@ -616,7 +651,7 @@ export default function ProductDetailScreen({
         {/* Suggest Better Deal bottom banner if available */}
         {hasBetterDeals && (
           <div
-            onClick={() => setShowBetterDealsModal(true)}
+            onClick={openBetterDeals}
             className="bg-gradient-to-r from-amber-500 to-orange-500 text-white px-4 py-1.5 flex items-center justify-between text-[11px] font-bold cursor-pointer hover:opacity-95 transition"
           >
             <div className="flex items-center space-x-1.5 truncate">

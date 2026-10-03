@@ -1,0 +1,282 @@
+{
+  "model_type": "gaussian_naive_bayes",
+  "label": "is_suspicious_listing",
+  "class_counts": [
+    94821,
+    5179
+  ],
+  "numeric_features": {
+    "seller_txn_count": [
+      {
+        "mean": 6.326476661560409,
+        "variance": 4.0241611357452385
+      },
+      {
+        "mean": 3.836523338991123,
+        "variance": 1.0811893253575278
+      }
+    ],
+    "txn_last_30d": [
+      {
+        "mean": 3.1779612148563845,
+        "variance": 2.3209023394272688
+      },
+      {
+        "mean": 3.474184738932146,
+        "variance": 0.8826473132167543
+      }
+    ],
+    "seller_account_age_months": [
+      {
+        "mean": 34.42104597082925,
+        "variance": 702.5494158536674
+      },
+      {
+        "mean": 4.487159683336551,
+        "variance": 8.593916995354682
+      }
+    ],
+    "order_success_rate_pct": [
+      {
+        "mean": 94.62047721496378,
+        "variance": 14.902162534501258
+      },
+      {
+        "mean": 85.86013129947854,
+        "variance": 48.95169355296912
+      }
+    ],
+    "refund_rate_pct": [
+      {
+        "mean": 2.8652297486844525,
+        "variance": 3.71439594309148
+      },
+      {
+        "mean": 7.718273798030493,
+        "variance": 12.687977479775007
+      }
+    ],
+    "late_delivery_rate_pct": [
+      {
+        "mean": 3.735712869512018,
+        "variance": 4.744150942708661
+      },
+      {
+        "mean": 9.415033790306996,
+        "variance": 14.250291189242844
+      }
+    ],
+    "avg_response_time_hours": [
+      {
+        "mean": 3.4956992649307885,
+        "variance": 5.1220924284720635
+      },
+      {
+        "mean": 7.353504537555508,
+        "variance": 12.427044582476235
+      }
+    ],
+    "complaint_report_count": [
+      {
+        "mean": 0.7732632551192468,
+        "variance": 1.0478480413527247
+      },
+      {
+        "mean": 0.5752274451372708,
+        "variance": 0.33652684343963357
+      }
+    ],
+    "cod_order_share_pct": [
+      {
+        "mean": 48.94032650994965,
+        "variance": 237.09740162516164
+      },
+      {
+        "mean": 24.38192701293691,
+        "variance": 176.53956137640387
+      }
+    ],
+    "seller_verified": [
+      {
+        "mean": 0.6488436105925902,
+        "variance": 0.22784557958576135
+      },
+      {
+        "mean": 0.12241745510716355,
+        "variance": 0.10743142179224915
+      }
+    ],
+    "authorized_dealer": [
+      {
+        "mean": 0.17720758059923436,
+        "variance": 0.14580505397740023
+      },
+      {
+        "mean": 0.0,
+        "variance": 0.0001
+      }
+    ],
+    "warranty_months": [
+      {
+        "mean": 7.444869807321163,
+        "variance": 21.974995590826616
+      },
+      {
+        "mean": 1.8304692025487546,
+        "variance": 9.352607059246536
+      }
+    ],
+    "listing_age_days": [
+      {
+        "mean": 206.44773837019227,
+        "variance": 45707.17562847358
+      },
+      {
+        "mean": 30.052133616528288,
+        "variance": 292.6943278477578
+      }
+    ],
+    "stock_quantity": [
+      {
+        "mean": 2.751853940375726,
+        "variance": 1.2484887921128438
+      },
+      {
+        "mean": 4.626415847348119,
+        "variance": 2.130320205061885
+      }
+    ],
+    "product_issue_rate_pct": [
+      {
+        "mean": 5.695606774870591,
+        "variance": 4.326110754096717
+      },
+      {
+        "mean": 8.83346592006178,
+        "variance": 6.604047400412114
+      }
+    ],
+    "review_count_all_time": [
+      {
+        "mean": 2.985052824792087,
+        "variance": 2.38300453878238
+      },
+      {
+        "mean": 2.350471584612651,
+        "variance": 1.968146555437384
+      }
+    ],
+    "review_count_last_30d": [
+      {
+        "mean": 1.1631361183337166,
+        "variance": 0.7789167109008837
+      },
+      {
+        "mean": 2.3460991027912566,
+        "variance": 1.9626186219909982
+      }
+    ],
+    "product_rating_all_time": [
+      {
+        "mean": 3.9058157229223087,
+        "variance": 0.4015281215119657
+      },
+      {
+        "mean": 4.748853030963802,
+        "variance": 0.021100472512912916
+      }
+    ],
+    "product_rating_last_30d": [
+      {
+        "mean": 3.9332683976931793,
+        "variance": 0.4213578348636364
+      },
+      {
+        "mean": 3.649302224160481,
+        "variance": 0.2895102850234288
+      }
+    ],
+    "verified_purchase_review_pct": [
+      {
+        "mean": 94.10513605331415,
+        "variance": 16.084387359807806
+      },
+      {
+        "mean": 41.4846489315307,
+        "variance": 367.96977511661726
+      }
+    ],
+    "early_review_burst_pct": [
+      {
+        "mean": 12.457290438822003,
+        "variance": 63.653835372620335
+      },
+      {
+        "mean": 60.19284997819444,
+        "variance": 303.07230855884245
+      }
+    ],
+    "price_deviation_pct": [
+      {
+        "mean": -4.40290336528827,
+        "variance": 146.1978686398922
+      },
+      {
+        "mean": -28.425143850164194,
+        "variance": 451.63983505846693
+      }
+    ],
+    "price_percentile_within_model": [
+      {
+        "mean": 52.181451366258564,
+        "variance": 798.2038959372362
+      },
+      {
+        "mean": 21.259644719057686,
+        "variance": 680.7664888484824
+      }
+    ]
+  },
+  "categorical_features": {
+    "product_condition": [
+      {
+        "new": 84691,
+        "refurbished": 6670,
+        "used": 3460
+      },
+      {
+        "new": 4189,
+        "refurbished": 990
+      }
+    ],
+    "recommend_to_others": [
+      {
+        "No": 28963,
+        "Yes": 65858
+      },
+      {
+        "Yes": 4586,
+        "No": 593
+      }
+    ]
+  },
+  "categorical_values": {
+    "product_condition": [
+      "new",
+      "refurbished",
+      "used"
+    ],
+    "recommend_to_others": [
+      "No",
+      "Yes"
+    ]
+  },
+  "log_features": [
+    "seller_txn_count",
+    "txn_last_30d",
+    "complaint_report_count",
+    "stock_quantity",
+    "review_count_all_time",
+    "review_count_last_30d"
+  ]
+}

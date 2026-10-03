@@ -20,7 +20,6 @@ export default function App() {
 
   // CSV Listings Data
   const [listings, setListings] = useState([]);
-  const [productSummaries, setProductSummaries] = useState([]);
   const [selectedListing, setSelectedListing] = useState(null);
 
   // Cart State
@@ -57,14 +56,7 @@ export default function App() {
         setBalance(Number(userData.balance || 55000));
       }
 
-      // 2. Fetch product summaries from CSV
-      const summaryRes = await fetch("/api/products/summary");
-      if (summaryRes.ok) {
-        const summaryData = await summaryRes.json();
-        setProductSummaries(summaryData);
-      }
-
-      // 3. Fetch every paginated item listing directly from the CSV-backed API.
+      // 2. Fetch every paginated item listing directly from the CSV-backed API.
       // The API caps a page at 100 records, so load the first page to discover
       // the total page count and then retrieve the remaining pages in parallel.
       const firstPageRes = await fetch("/api/listings?page=1&limit=100");
@@ -99,7 +91,7 @@ export default function App() {
   // Open specific item listing from CSV
   const handleSelectListing = async (item) => {
     try {
-      const res = await fetch(`/api/listings/${item.product_id}/${item.seller_id}`);
+      const res = await fetch(`/api/listing/${item.id}`);
       if (res.ok) {
         const data = await res.json();
         setSelectedListing(data.listing);
@@ -318,7 +310,6 @@ export default function App() {
               {currentScreen === "store_catalog" && (
                 <StoreCatalogScreen
                   listings={listings}
-                  productSummaries={productSummaries}
                   onSelectListing={handleSelectListing}
                   onBackToHome={() => setCurrentScreen("upay_home")}
                   onOpenCart={() => setIsCartOpen(true)}

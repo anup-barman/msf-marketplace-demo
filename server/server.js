@@ -6,11 +6,23 @@ const csv = require("csv-parser");
 
 const app = express();
 const port = process.env.PORT || 4000;
-const csvPath = path.join(
-  __dirname,
-  "..",
-  "fake_marketplace_dataset_full_features.csv",
+const csvPath = path.join(__dirname, "..", "store_listings_3000.csv");
+const riskModel = JSON.parse(
+  fs.readFileSync(path.join(__dirname, "risk-model.json"), "utf8"),
 );
+const PRODUCT_IDS = {
+  "Mobile Phone": 1,
+  Laptop: 2,
+  "Smart TV": 3,
+  "Desktop Computer": 4,
+  "Digital Camera": 5,
+  "Gaming Console": 6,
+  "Wireless Earbuds": 7,
+  "Bluetooth Speaker": 8,
+  "Power Bank": 9,
+  Smartwatch: 10,
+  "Wi-Fi Router": 11,
+};
 
 app.use(cors());
 app.use(express.json());
@@ -18,6 +30,7 @@ app.use(express.json());
 // In-memory data store directly loaded from the CSV file
 let allListings = [];
 let listingsByProduct = {};
+let listingsByModel = {};
 let productSummaries = [];
 let userState = {
   name: "Nusrat Jahan",
@@ -37,59 +50,47 @@ function normalize(value, minimum, maximum) {
 
 // 1. Seller Risk Analysis (Low, Medium, or High)
 // Evaluated from the CSV features: refund_rate, all_time_rating, seller_age_days, transaction_count, price_deviation_percent
+function modelValue(row, feature) {
+  const raw = row[feature];
+  if (raw === undefined || raw === "") return null;
+  const value = Number(raw);
+  if (!Number.isFinite(value)) return null;
+  return riskModel.log_features.includes(feature) ? Math.log1p(value) : value;
+}
+
 function calculateRisk(row) {
-  const refund = Number(row.refund_rate); // 1 - 12
-  const rating = Number(row.all_time_rating); // 2 - 5
-  const age = Number(row.seller_age_days); // 44 - 2991
-  const tx = Number(row.transaction_count); // 32 - 9992
-  const dev = Number(row.price_deviation_percent); // -70.9% to +68.99%
-
-  // 1. Refund Rate penalty (0 to 35)
-  const refundPenalty = (refund / 12) * 35;
-
-  // 2. Rating penalty (0 to 30): rating 5 -> 0, rating 2 -> 30
-  const ratingPenalty = ((5 - rating) / 3) * 30;
-
-  // 3. Experience penalty (0 to 15): age and transactions
-  const ageFactor = 1 - Math.min(age / 1500, 1);
-  const txFactor = 1 - Math.min(tx / 4000, 1);
-  const expPenalty = (ageFactor * 0.4 + txFactor * 0.6) * 15;
-
-  // 4. Price anomaly penalty (0 to 20):
-  // Severe undercutting (-20% or more) signals counterfeit/dispute risk
-  let devPenalty = 0;
-  if (dev < -20) {
-    devPenalty = Math.min(Math.max((-dev - 20) / 30, 0), 1) * 20;
+  const logScores = riskModel.class_counts.map((count) => Math.log(count / riskModel.class_counts.reduce((a, b) => a + b, 0)));
+  for (const [feature, stats] of Object.entries(riskModel.numeric_features)) {
+    const value = modelValue(row, feature);
+    if (value === null) continue;
+    stats.forEach((stat, label) => {
+      logScores[label] += -0.5 * (Math.log(2 * Math.PI * stat.variance) + ((value - stat.mean) ** 2) / stat.variance);
+    });
   }
-
-  const rawScore = refundPenalty + ratingPenalty + expPenalty + devPenalty;
-  const score = Math.min(Math.max(Math.round(rawScore), 5), 98);
-
-  let level = "Low";
-  let color = "#10b981"; // green
-  let summary = "Low dispute rate, established seller metrics";
-
-  if (score >= 65) {
-    level = "High";
-    color = "#ef4444"; // red
-    summary = "High refund or low customer rating detected";
-  } else if (score >= 38) {
-    level = "Medium";
-    color = "#f59e0b"; // amber
-    summary = "Moderate risk. Standard marketplace seller metrics";
+  for (const [feature, byLabel] of Object.entries(riskModel.categorical_features)) {
+    const value = row[feature] || "missing";
+    const categoryCount = riskModel.categorical_values[feature].length;
+    byLabel.forEach((counts, label) => {
+      logScores[label] += Math.log(((counts[value] || 0) + 1) / (riskModel.class_counts[label] + categoryCount));
+    });
   }
-
+  const maxLog = Math.max(...logScores);
+  const suspiciousProbability = Math.exp(logScores[1] - maxLog) / (Math.exp(logScores[0] - maxLog) + Math.exp(logScores[1] - maxLog));
+  const score = Math.round(suspiciousProbability * 100);
+  const level = score >= 55 ? "High" : score >= 15 ? "Medium" : "Low";
+  const colors = { Low: "#10b981", Medium: "#f59e0b", High: "#ef4444" };
   return {
     score,
     level,
-    color,
-    summary,
+    color: colors[level],
+    summary: `${level} predicted seller risk from the trained listing model`,
+    model: { type: "Gaussian naive Bayes", suspicious_probability: Number(suspiciousProbability.toFixed(4)) },
     factors: {
-      refund_rate: refund,
-      all_time_rating: rating,
-      seller_age_days: age,
-      transaction_count: tx,
-      price_deviation_percent: dev,
+      refund_rate: Number(row.refund_rate_pct),
+      all_time_rating: Number(row.product_rating_all_time || 0),
+      seller_age_days: Number(row.seller_account_age_months) * 30,
+      transaction_count: Number(row.seller_txn_count),
+      price_deviation_percent: Number(row.price_deviation_pct),
     },
   };
 }
@@ -129,12 +130,10 @@ function offerScore(row, priceMin, priceMax, deliveryMin, deliveryMax, maxWarran
 }
 
 // 2. Suggest Better Deals
-// Finds alternative seller listings for the exact same product_id that offer better deals
-function findBetterDeals(productId, currentSellerId) {
-  const productOffers = listingsByProduct[productId] || [];
-  const baseOffer = productOffers.find((o) => o.seller_id === Number(currentSellerId));
-
-  if (!baseOffer) return [];
+// Finds comparable offers for the exact same model, not merely the same product category.
+function findBetterDeals(baseOffer) {
+  const productOffers = listingsByModel[baseOffer.model_id] || [];
+  if (productOffers.length < 2) return [];
 
   const baseTotal = baseOffer.price_bdt + baseOffer.shipping_cost_bdt;
   const baseRisk = baseOffer.seller_risk.score;
@@ -164,7 +163,7 @@ function findBetterDeals(productId, currentSellerId) {
   );
 
   const candidates = productOffers
-    .filter((o) => o.seller_id !== Number(currentSellerId))
+    .filter((o) => o.id !== baseOffer.id && o.stock_available === 1)
     .map((cand) => {
       const candTotal = cand.price_bdt + cand.shipping_cost_bdt;
       const candRisk = cand.seller_risk.score;
@@ -189,8 +188,8 @@ function findBetterDeals(productId, currentSellerId) {
 
       // Better deal condition
       const isBetter =
-        (isCheaper && (cand.seller_risk.level !== "High" || baseOffer.seller_risk.level === "High")) ||
-        (score > baseScore + 0.04 && candTotal <= baseTotal) ||
+        (isCheaper && candRisk <= baseRisk) ||
+        (score > baseScore + 0.06 && candTotal <= baseTotal && candRisk <= baseRisk + 5) ||
         (candTotal <= baseTotal + 300 && hasBetterRisk && (hasFasterDelivery || hasBetterWarranty || hasBetterRating));
 
       if (!isBetter) return null;
@@ -227,8 +226,7 @@ function findBetterDeals(productId, currentSellerId) {
     .sort((a, b) => {
       if (b.savings_bdt !== a.savings_bdt) return b.savings_bdt - a.savings_bdt;
       return a.seller_risk.score - b.seller_risk.score;
-    })
-    .slice(0, 10);
+    });
 
   return candidates;
 }
@@ -240,34 +238,35 @@ function initDataset() {
     fs.createReadStream(csvPath)
       .pipe(csv())
       .on("data", (row) => {
-        const sellerId = Number(row.seller_id);
-        const platformId = Number(row.platform_id);
-        const productId = Number(row.product_id);
-        const price = Number(row.price_bdt);
-        const shipping = Number(row.shipping_cost_bdt);
-        const avgPrice = Number(row.product_average_price_bdt);
+        const sellerId = Number(row.seller_id.replace("S", ""));
+        const platformId = (sellerId % 3) + 1;
+        const productId = PRODUCT_IDS[row.product_name];
+        const price = Number(row.product_price_bdt);
+        const shipping = Math.round(Math.max(60, price * 0.015));
+        const avgPrice = Number(row.model_avg_price_bdt);
 
         const listing = {
-          id: `item_${productId}_${sellerId}`,
+          id: `item_${row.model_id}_${sellerId}`,
           product_id: productId,
-          product_title: `Product #${productId}`,
+          model_id: row.model_id,
+          product_title: `${row.product_name} (${row.model_id})`,
           seller_id: sellerId,
-          seller_name: `Seller #${sellerId}`,
+          seller_name: `Seller ${row.seller_id}`,
           platform_id: platformId,
           platform_name: `Platform #${platformId}`,
-          seller_age_days: Number(row.seller_age_days),
-          transaction_count: Number(row.transaction_count), // items sold
-          refund_rate: Number(row.refund_rate),
-          all_time_rating: Number(row.all_time_rating), // product review rating (1 to 5 stars)
+          seller_age_days: Number(row.seller_account_age_months) * 30,
+          transaction_count: Number(row.seller_txn_count), // items sold
+          refund_rate: Number(row.refund_rate_pct),
+          all_time_rating: Number(row.product_rating_all_time || 0), // product review rating (1 to 5 stars)
           price_bdt: price, // price of the item
           shipping_cost_bdt: shipping,
           total_cost_bdt: Number((price + shipping).toFixed(2)),
           product_average_price_bdt: avgPrice, // average market price
-          price_deviation_percent: Number(row.price_deviation_percent),
-          delivery_time_days: Number(row.delivery_time_days),
-          warranty_days: Number(row.warranty_days),
-          return_policy_days: Number(row.return_policy_days),
-          stock_available: Number(row.stock_available),
+          price_deviation_percent: Number(row.price_deviation_pct),
+          delivery_time_days: Math.max(1, Math.round(Number(row.avg_response_time_hours) / 12) + (platformId === 1 ? 1 : 2)),
+          warranty_days: Number(row.warranty_months) * 30,
+          return_policy_days: Number(row.authorized_dealer) ? 30 : 7,
+          stock_available: Number(row.stock_quantity) > 0 ? 1 : 0,
           seller_risk: calculateRisk(row), // seller risk analysis (Low, Medium, High)
         };
 
@@ -278,10 +277,15 @@ function initDataset() {
 
         // Group by product_id
         listingsByProduct = {};
+        listingsByModel = {};
         const productIds = [...new Set(allListings.map((r) => r.product_id))].sort((a, b) => a - b);
 
         productIds.forEach((pid) => {
           listingsByProduct[pid] = allListings.filter((o) => o.product_id === pid);
+        });
+        allListings.forEach((listing) => {
+          listingsByModel[listing.model_id] ||= [];
+          listingsByModel[listing.model_id].push(listing);
         });
 
         // Compute product level summaries directly from CSV
@@ -293,7 +297,7 @@ function initDataset() {
 
           return {
             product_id: pid,
-            product_title: `Product #${pid}`,
+            product_title: offers[0] ? offers[0].product_title : `Product #${pid}`,
             product_average_price_bdt: offers[0] ? offers[0].product_average_price_bdt : 0,
             min_price_bdt: Math.min(...prices),
             max_price_bdt: Math.max(...prices),
@@ -443,20 +447,15 @@ app.get("/api/listings", (req, res) => {
   });
 });
 
-// 7. Get specific Item Listing with the 4 MANDATORY items, statistics & better deals
-app.get("/api/listings/:productId/:sellerId", (req, res) => {
-  const productId = Number(req.params.productId);
-  const sellerId = Number(req.params.sellerId);
-
-  const productListings = listingsByProduct[productId] || [];
-  const listing = productListings.find((o) => o.seller_id === sellerId);
+// 7. Get a unique listing with the 4 mandatory items and comparable-model deals.
+app.get("/api/listing/:listingId", (req, res) => {
+  const listing = allListings.find((item) => item.id === req.params.listingId);
 
   if (!listing) {
     return res.status(404).json({ message: "Item listing not found in dataset" });
   }
 
-  // Find better deals for this exact product_id
-  const betterDeals = findBetterDeals(productId, sellerId);
+  const betterDeals = findBetterDeals(listing);
 
   res.json({
     listing: {
@@ -486,7 +485,7 @@ app.get("/api/offers/:productId/:sellerId", (req, res) => {
   const productListings = listingsByProduct[productId] || [];
   const listing = productListings.find((o) => o.seller_id === sellerId);
   if (!listing) return res.status(404).json({ message: "Offer not found" });
-  const betterDeals = findBetterDeals(productId, sellerId);
+  const betterDeals = findBetterDeals(listing);
   res.json({
     product: {
       id: productId,
@@ -513,7 +512,7 @@ app.get("/api/recommendation/random", (req, res) => {
   const pid = Number(pids[Math.floor(Math.random() * pids.length)]);
   const offers = listingsByProduct[pid] || [];
   const baseOffer = offers[Math.floor(Math.random() * offers.length)];
-  const betterDeals = findBetterDeals(pid, baseOffer.seller_id);
+  const betterDeals = findBetterDeals(baseOffer);
   res.json({
     product_id: pid,
     base_seller_id: baseOffer.seller_id,
