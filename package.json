@@ -1,0 +1,8 @@
+{
+  "name": "mfs-marketplace-demo",
+  "private": true,
+  "scripts": {
+    "dev": "bash scripts/dev.sh",
+    "start": "bash scripts/dev.sh"
+  }
+}
