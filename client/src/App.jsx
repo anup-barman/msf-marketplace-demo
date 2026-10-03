@@ -13,7 +13,13 @@ import {
 
 export default function App() {
   // Navigation State: 'upay_home' | 'store_catalog' | 'product_detail'
-  const [currentScreen, setCurrentScreen] = useState("upay_home");
+  const [currentScreen, setCurrentScreen] = useState(() => {
+    if (typeof window !== "undefined") {
+      const params = new URLSearchParams(window.location.search);
+      return params.get("screen") || "upay_home";
+    }
+    return "upay_home";
+  });
 
   // User State
   const [balance, setBalance] = useState(55000.0);
@@ -73,10 +79,27 @@ export default function App() {
           ),
         );
 
-        setListings([
+        const all = [
           ...(firstPage.listings || []),
           ...remainingListings.flat(),
-        ]);
+        ];
+        setListings(all);
+
+        if (typeof window !== "undefined" && all.length > 0) {
+          const params = new URLSearchParams(window.location.search);
+          const targetScreen = params.get("screen");
+          const targetModal = params.get("modal");
+          const targetListing = all[0];
+          if (targetScreen === "product_detail") {
+            handleSelectListing(targetListing);
+          }
+          if (targetModal === "payment") {
+            const total = targetListing.price_bdt + (targetListing.shipping_cost_bdt || 0);
+            setPaymentAmount(total);
+            setPaymentItems([{ listing: targetListing, quantity: 1 }]);
+            setIsPaymentOpen(true);
+          }
+        }
       }
     } catch (err) {
       console.error("Error loading CSV dataset:", err);
