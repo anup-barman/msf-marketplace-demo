@@ -163,6 +163,21 @@ export default function StoreCatalogScreen({
     return result;
   }, [listings, searchQuery, selectedPlatformFilter, riskFilter, inStockOnly, sortBy]);
 
+  const riskCounts = useMemo(
+    () =>
+      listings.reduce(
+        (counts, item) => {
+          const level = item.seller_risk?.level;
+          if (level === "Low" || level === "Medium" || level === "High") {
+            counts[level] += 1;
+          }
+          return counts;
+        },
+        { Low: 0, Medium: 0, High: 0 },
+      ),
+    [listings],
+  );
+
   const totalPages = Math.max(1, Math.ceil(filteredListings.length / itemsPerPage));
   const pageStart = (currentPage - 1) * itemsPerPage;
   const visibleListings = filteredListings.slice(pageStart, pageStart + itemsPerPage);
@@ -182,35 +197,32 @@ export default function StoreCatalogScreen({
   return (
     <div className="flex flex-col h-full bg-[#f8fafc] overflow-y-auto select-none pb-20">
       {/* 1. Store Header with Upay Styling */}
-      <div className="sticky top-0 z-30 bg-white border-b border-slate-200 px-4 pt-3 pb-2.5 shadow-xs">
+      <div className="sticky top-0 z-30 bg-[#0050A0] border-b border-[#003d7a] px-4 pt-3 pb-3 shadow-md">
         <div className="flex items-center justify-between">
           <div className="flex items-center space-x-2">
             <button
               onClick={onBackToHome}
-              className="w-8 h-8 rounded-full bg-slate-100 hover:bg-slate-200 flex items-center justify-center text-slate-700 transition active:scale-95"
+              className="w-8 h-8 rounded-full border border-white/20 bg-white/15 hover:bg-white/25 flex items-center justify-center text-white transition active:scale-95"
               title="Back to upay home"
             >
               <ArrowLeft className="w-4 h-4" />
             </button>
             <div className="flex items-center space-x-1.5">
-              <div className="w-7 h-7 rounded-lg bg-[#FFC400] flex items-center justify-center text-blue-900 font-bold shadow-xs">
+              <div className="w-8 h-8 rounded-xl bg-[#FFC400] flex items-center justify-center text-blue-900 font-bold shadow-sm shadow-blue-950/30">
                 <Store className="w-4 h-4" />
               </div>
               <div>
-                <h1 className="text-sm font-black text-slate-900 leading-tight flex items-center space-x-1">
+                <h1 className="text-sm font-black text-white leading-tight">
                   <span>upay Store</span>
-                  <span className="text-[10px] bg-blue-100 text-blue-800 font-bold px-1.5 py-0.2 rounded-sm">
-                    ML Risk Scores
-                  </span>
                 </h1>
-                <p className="text-[10px] text-slate-500 font-medium">Multi-Seller Marketplace</p>
+                <p className="text-[10px] text-blue-100 font-medium">Multi-seller marketplace</p>
               </div>
             </div>
           </div>
 
           <div className="flex items-center space-x-2">
             {/* Live Upay Balance Pill */}
-            <div className="bg-[#FFF8E1] border border-amber-300/80 px-2.5 py-1 rounded-full text-right">
+            <div className="bg-white/95 border border-white/30 px-2.5 py-1 rounded-full text-right shadow-sm">
               <p className="text-[9px] text-slate-500 font-semibold leading-none">upay Balance</p>
               <p className="text-[11px] font-extrabold text-[#0050A0] leading-tight">
                 ৳{Number(balance).toLocaleString("en-BD", { maximumFractionDigits: 0 })}
@@ -220,7 +232,7 @@ export default function StoreCatalogScreen({
             {/* Cart Icon */}
             <button
               onClick={onOpenCart}
-              className="relative w-9 h-9 rounded-full bg-slate-100 hover:bg-slate-200 flex items-center justify-center text-slate-800 transition active:scale-95"
+              className="relative w-9 h-9 rounded-full border border-white/20 bg-white/15 hover:bg-white/25 flex items-center justify-center text-white transition active:scale-95"
             >
               <ShoppingCart className="w-4 h-4" />
               {cartCount > 0 && (
@@ -233,29 +245,39 @@ export default function StoreCatalogScreen({
         </div>
 
         {/* Search Bar */}
-        <div className="relative mt-2.5">
-          <input
-            type="text"
-            value={searchQuery}
-            onChange={(e) => {
-              setSearchQuery(e.target.value);
-              setCurrentPage(1);
-            }}
-            placeholder="Search products, models, sellers, or platforms..."
-            className="w-full bg-slate-100 text-xs text-slate-800 rounded-xl pl-9 pr-3 py-2 border border-slate-200 focus:outline-hidden focus:ring-2 focus:ring-[#0050A0] focus:bg-white transition"
-          />
-          <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
-          {searchQuery && (
-            <button
-              onClick={() => {
-                setSearchQuery("");
+        <div className="relative mt-3 rounded-2xl bg-white p-1 shadow-[0_10px_22px_-12px_rgba(0,0,0,0.65)]">
+          <div className="relative">
+            <Search className="w-4 h-4 text-[#0050A0] absolute left-3 top-1/2 -translate-y-1/2" />
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => {
+                setSearchQuery(e.target.value);
                 setCurrentPage(1);
               }}
-              className="absolute right-3 top-2.5 text-xs text-slate-400 hover:text-slate-600 font-bold"
-            >
-              ✕
-            </button>
-          )}
+              placeholder="Search products, models, sellers..."
+              className="w-full bg-slate-50 text-xs text-slate-800 rounded-xl pl-9 pr-20 py-2.5 border border-slate-100 focus:outline-hidden focus:ring-2 focus:ring-[#0050A0]/35 focus:bg-white transition"
+            />
+            {searchQuery ? (
+              <button
+                onClick={() => {
+                  setSearchQuery("");
+                  setCurrentPage(1);
+                }}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-slate-400 hover:text-slate-700 font-bold"
+                aria-label="Clear search"
+              >
+                Clear
+              </button>
+            ) : (
+              <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[9px] font-bold text-[#0050A0] bg-blue-50 px-1.5 py-0.5 rounded-md">
+                Fuzzy search
+              </span>
+            )}
+          </div>
+          <p className="px-2 pt-1 text-[9px] font-medium text-slate-400">
+            Explore {listings.length.toLocaleString()} listings — typos and partial names work too.
+          </p>
         </div>
 
       </div>
@@ -331,6 +353,15 @@ export default function StoreCatalogScreen({
             <span className="text-[11px] font-semibold">In Stock Only</span>
           </label>
         </div>
+
+        {riskFilter === "all" && !searchQuery.trim() && !inStockOnly && (
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-1 px-1 text-[10px] font-semibold text-slate-500">
+            <span>Dataset risk mix:</span>
+            <span className="text-emerald-700">{riskCounts.Low.toLocaleString()} low</span>
+            <span className="text-amber-700">{riskCounts.Medium.toLocaleString()} medium</span>
+            <span className="text-red-700">{riskCounts.High.toLocaleString()} high</span>
+          </div>
+        )}
 
         <div className="space-y-3">
           {visibleListings.map((item) => {

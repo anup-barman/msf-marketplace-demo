@@ -7,8 +7,8 @@ const csv = require("csv-parser");
 const app = express();
 const port = process.env.PORT || 4000;
 const csvPath = path.join(__dirname, "..", "store_listings_3000.csv");
-const riskModel = JSON.parse(
-  fs.readFileSync(path.join(__dirname, "risk-model.json"), "utf8"),
+const riskScores = JSON.parse(
+  fs.readFileSync(path.join(__dirname, "risk-scores.json"), "utf8"),
 );
 const PRODUCT_IDS = {
   "Mobile Phone": 1,
@@ -50,41 +50,25 @@ function normalize(value, minimum, maximum) {
 
 // 1. Seller Risk Analysis (Low, Medium, or High)
 // Evaluated from the CSV features: refund_rate, all_time_rating, seller_age_days, transaction_count, price_deviation_percent
-function modelValue(row, feature) {
-  const raw = row[feature];
-  if (raw === undefined || raw === "") return null;
-  const value = Number(raw);
-  if (!Number.isFinite(value)) return null;
-  return riskModel.log_features.includes(feature) ? Math.log1p(value) : value;
-}
-
-function calculateRisk(row) {
-  const logScores = riskModel.class_counts.map((count) => Math.log(count / riskModel.class_counts.reduce((a, b) => a + b, 0)));
-  for (const [feature, stats] of Object.entries(riskModel.numeric_features)) {
-    const value = modelValue(row, feature);
-    if (value === null) continue;
-    stats.forEach((stat, label) => {
-      logScores[label] += -0.5 * (Math.log(2 * Math.PI * stat.variance) + ((value - stat.mean) ** 2) / stat.variance);
-    });
+function calculateRisk(row, listingId) {
+  const prediction = riskScores.listings[listingId];
+  if (!prediction) {
+    throw new Error(`No risk score was generated for listing ${listingId}`);
   }
-  for (const [feature, byLabel] of Object.entries(riskModel.categorical_features)) {
-    const value = row[feature] || "missing";
-    const categoryCount = riskModel.categorical_values[feature].length;
-    byLabel.forEach((counts, label) => {
-      logScores[label] += Math.log(((counts[value] || 0) + 1) / (riskModel.class_counts[label] + categoryCount));
-    });
-  }
-  const maxLog = Math.max(...logScores);
-  const suspiciousProbability = Math.exp(logScores[1] - maxLog) / (Math.exp(logScores[0] - maxLog) + Math.exp(logScores[1] - maxLog));
-  const score = Math.round(suspiciousProbability * 100);
-  const level = score >= 55 ? "High" : score >= 15 ? "Medium" : "Low";
+  const { score, level, suspicious_probability: suspiciousProbability } = prediction;
   const colors = { Low: "#10b981", Medium: "#f59e0b", High: "#ef4444" };
+
   return {
     score,
     level,
     color: colors[level],
-    summary: `${level} predicted seller risk from the trained listing model`,
-    model: { type: "Gaussian naive Bayes", suspicious_probability: Number(suspiciousProbability.toFixed(4)) },
+    summary: `${level} risk predicted by the trained HistGradientBoosting model`,
+    model: {
+      type: riskScores.model.type,
+      suspicious_probability: suspiciousProbability,
+      training_rows: riskScores.model.training_rows,
+      metrics: riskScores.model.metrics,
+    },
     factors: {
       refund_rate: Number(row.refund_rate_pct),
       all_time_rating: Number(row.product_rating_all_time || 0),
@@ -245,8 +229,9 @@ function initDataset() {
         const shipping = Math.round(Math.max(60, price * 0.015));
         const avgPrice = Number(row.model_avg_price_bdt);
 
+        const listingId = `item_${row.model_id}_${sellerId}`;
         const listing = {
-          id: `item_${row.model_id}_${sellerId}`,
+          id: listingId,
           product_id: productId,
           model_id: row.model_id,
           product_title: `${row.product_name} (${row.model_id})`,
@@ -267,7 +252,7 @@ function initDataset() {
           warranty_days: Number(row.warranty_months) * 30,
           return_policy_days: Number(row.authorized_dealer) ? 30 : 7,
           stock_available: Number(row.stock_quantity) > 0 ? 1 : 0,
-          seller_risk: calculateRisk(row), // seller risk analysis (Low, Medium, High)
+          seller_risk: calculateRisk(row, listingId), // HistGradientBoosting seller risk analysis
         };
 
         rows.push(listing);

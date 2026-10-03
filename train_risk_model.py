@@ -1,39 +1,130 @@
-"""Train a Gaussian naïve-Bayes seller-risk classifier and save it for the API."""
+"""Train the calibrated seller-risk model and score the store listing CSV.
+
+The training CSV supplies labels. The store CSV is used only for inference; its
+target column (if present) is ignored.
+"""
 import argparse
-import csv
 import json
-import math
+import os
+import sys
+import time
+from pathlib import Path
 
-NUMERIC = ["seller_txn_count", "txn_last_30d", "seller_account_age_months", "order_success_rate_pct", "refund_rate_pct", "late_delivery_rate_pct", "avg_response_time_hours", "complaint_report_count", "cod_order_share_pct", "seller_verified", "authorized_dealer", "warranty_months", "listing_age_days", "stock_quantity", "product_issue_rate_pct", "review_count_all_time", "review_count_last_30d", "product_rating_all_time", "product_rating_last_30d", "verified_purchase_review_pct", "early_review_burst_pct", "price_deviation_pct", "price_percentile_within_model"]
-CATEGORICAL = ["product_condition", "recommend_to_others"]
+try:
+    import sklearn
+except ModuleNotFoundError:
+    for candidate in [
+        os.path.abspath(os.path.join(os.path.dirname(__file__), ".venv", "bin", "python")),
+        "/home/anup/ML/.venv/bin/python",
+    ]:
+        if os.path.exists(candidate) and sys.executable != candidate:
+            os.execv(candidate, [candidate] + sys.argv)
+    raise
 
-def value(row, feature):
-    raw = row.get(feature, "")
-    if raw == "": return None
-    number = float(raw)
-    return math.log1p(number) if feature in {"seller_txn_count", "txn_last_30d", "complaint_report_count", "stock_quantity", "review_count_all_time", "review_count_last_30d"} else number
+import joblib
+import pandas as pd
+from sklearn.model_selection import GroupShuffleSplit
 
-def train(path):
-    counts = [0, 0]; sums = [{f: 0.0 for f in NUMERIC} for _ in range(2)]; squares = [{f: 0.0 for f in NUMERIC} for _ in range(2)]; observed = [{f: 0 for f in NUMERIC} for _ in range(2)]
-    category_counts = [{f: {} for f in CATEGORICAL} for _ in range(2)]; category_values = {f: set() for f in CATEGORICAL}
-    with open(path, newline="", encoding="utf-8") as file:
-        for row in csv.DictReader(file):
-            label = int(row["is_suspicious_listing"]); counts[label] += 1
-            for feature in NUMERIC:
-                number = value(row, feature)
-                if number is not None: sums[label][feature] += number; squares[label][feature] += number * number; observed[label][feature] += 1
-            for feature in CATEGORICAL:
-                item = row.get(feature) or "missing"; category_values[feature].add(item); category_counts[label][feature][item] = category_counts[label][feature].get(item, 0) + 1
-    numeric = {}
-    for feature in NUMERIC:
-        numeric[feature] = []
-        for label in range(2):
-            n = observed[label][feature]; mean = sums[label][feature] / n; variance = max((squares[label][feature] / n) - mean * mean, .0001)
-            numeric[feature].append({"mean": mean, "variance": variance})
-    return {"model_type": "gaussian_naive_bayes", "label": "is_suspicious_listing", "class_counts": counts, "numeric_features": numeric, "categorical_features": {feature: [category_counts[0][feature], category_counts[1][feature]] for feature in CATEGORICAL}, "categorical_values": {f: sorted(v) for f, v in category_values.items()}, "log_features": [f for f in NUMERIC if f in {"seller_txn_count", "txn_last_30d", "complaint_report_count", "stock_quantity", "review_count_all_time", "review_count_last_30d"}]}
+from new_model.seller_risk_model import (
+    FEATURES,
+    GROUP,
+    LOW_MAX,
+    MEDIUM_MAX,
+    MODEL_VERSION,
+    RiskScorer,
+    evaluate,
+    train,
+)
+
+
+def main():
+    parser = argparse.ArgumentParser(description="Train seller risk model and score store listings")
+    parser.add_argument("--input", default="risk_training_100000.csv", help="Labelled training CSV")
+    parser.add_argument("--store-input", default="store_listings_3000.csv", help="Store listing CSV to score")
+    parser.add_argument("--model-out", default="server/risk_model.joblib", help="Joblib model output path")
+    parser.add_argument("--model-json", default="server/risk-model.json", help="JSON model metadata output path")
+    parser.add_argument("--scores-out", default="server/risk-scores.json", help="JSON risk scores output path")
+    parser.add_argument("--seed", type=int, default=42, help="Random seed")
+    args = parser.parse_args()
+
+    print(f"Loading training data from {args.input}...")
+    df_train = pd.read_csv(args.input)
+    t0 = time.time()
+
+    # 80/20 train/validation split by seller_id to prevent seller leakage
+    tr, te = next(GroupShuffleSplit(1, test_size=0.2, random_state=args.seed).split(df_train, groups=df_train[GROUP]))
+    val_df = df_train.iloc[te]
+    print(f"Training calibrated HistGradientBoosting model on {len(tr)} rows (evaluating on {len(te)} holdout rows)...")
+    val_model = train(df_train.iloc[tr], seed=args.seed)
+    metrics = evaluate(val_model, val_df)
+    print("Holdout evaluation metrics:")
+    print(json.dumps(metrics, indent=2))
+
+    print(f"Retraining final calibrated model on all {len(df_train)} rows...")
+    final_model = train(df_train, seed=args.seed)
+    metrics["train_rows"] = int(len(df_train))
+    metrics["train_seconds"] = round(time.time() - t0, 1)
+
+    bands = {
+        "low": [0, LOW_MAX],
+        "medium": [LOW_MAX + 1, MEDIUM_MAX],
+        "high": [MEDIUM_MAX + 1, 100],
+    }
+    model_payload = {
+        "model": final_model,
+        "features": FEATURES,
+        "version": MODEL_VERSION,
+        "trained_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
+        "metrics": metrics,
+        "bands": bands,
+    }
+
+    # Save joblib model
+    joblib.dump(model_payload, args.model_out, compress=3)
+    print(f"Saved joblib model -> {args.model_out}")
+
+    # Save model metadata JSON
+    json_meta = {
+        "type": "HistGradientBoostingClassifier",
+        "version": MODEL_VERSION,
+        "training_rows": int(len(df_train)),
+        "metrics": metrics,
+        "bands": bands,
+        "features": FEATURES,
+    }
+    with open(args.model_json, "w", encoding="utf-8") as f:
+        json.dump(json_meta, f, indent=2)
+    print(f"Saved model metadata -> {args.model_json}")
+
+    # Score store listings
+    print(f"Scoring store listings from {args.store_input}...")
+    store_df = pd.read_csv(args.store_input)
+    scorer = RiskScorer(final_model, {k: v for k, v in model_payload.items() if k != "model"})
+    scores_df = scorer.score_df(store_df)
+
+    listings = {}
+    for idx, row in store_df.iterrows():
+        seller_id = int(str(row["seller_id"]).replace("S", ""))
+        listing_id = f"item_{row['model_id']}_{seller_id}"
+        score = int(scores_df.loc[idx, "risk_score"])
+        prob = float(scores_df.loc[idx, "risk_probability"])
+        band = str(scores_df.loc[idx, "risk_band"])
+        level = band.capitalize()
+        listings[listing_id] = {
+            "score": score,
+            "level": level,
+            "risk_band": band,
+            "suspicious_probability": prob,
+        }
+
+    scores_payload = {
+        "model": json_meta,
+        "listings": listings,
+    }
+    with open(args.scores_out, "w", encoding="utf-8") as f:
+        json.dump(scores_payload, f, indent=2)
+    print(f"Saved {len(listings)} scores -> {args.scores_out}")
+
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(); parser.add_argument("--input", required=True); parser.add_argument("--out", default="server/risk-model.json"); args = parser.parse_args()
-    model = train(args.input)
-    with open(args.out, "w", encoding="utf-8") as file: json.dump(model, file, indent=2)
-    print(f"Trained {model['model_type']} on {sum(model['class_counts'])} rows; suspicious class: {model['class_counts'][1]}")
+    main()

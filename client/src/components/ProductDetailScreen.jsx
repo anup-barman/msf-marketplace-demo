@@ -302,8 +302,8 @@ export default function ProductDetailScreen({
               </div>
               <div className="flex justify-between text-[9px] text-slate-400 font-semibold px-0.5">
                 <span>0 (Safe)</span>
-                <span>38 (Medium)</span>
-                <span>65 (High Risk)</span>
+                <span>34 (Medium)</span>
+                <span>67 (High Risk)</span>
                 <span>100</span>
               </div>
             </div>
