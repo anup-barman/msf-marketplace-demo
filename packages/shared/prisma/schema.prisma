@@ -1,0 +1,150 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum ProductCategory {
+  MOBILE_PHONE
+  LAPTOP
+  SMART_TV
+  DESKTOP_COMPUTER
+  DIGITAL_CAMERA
+  GAMING_CONSOLE
+  WIRELESS_EARBUDS
+  BLUETOOTH_SPEAKER
+  POWER_BANK
+  SMARTWATCH
+  WIFI_ROUTER
+}
+
+enum RiskLevel {
+  LOW
+  MEDIUM
+  HIGH
+}
+
+enum SellerScale {
+  SMALL
+  MEDIUM
+  BIG
+}
+
+enum ProductCondition {
+  NEW
+  REFURBISHED
+  USED
+}
+
+model Website {
+  id          String   @id @default(cuid())
+  name        String   @unique
+  slug        String   @unique
+  description String?
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  listings    Listing[]
+  generatorSettings GeneratorSettings?
+}
+
+model GeneratorSettings {
+  id           String   @id @default(cuid())
+  websiteId    String   @unique
+  website      Website  @relation(fields: [websiteId], references: [id], onDelete: Cascade)
+  isEnabled    Boolean  @default(false)
+  intervalMs   Int      @default(5000)
+  rowsPerTick  Int      @default(1)
+  lastRunAt    DateTime?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+model Listing {
+  id                    String        @id @default(cuid())
+  websiteId             String
+  website               Website       @relation(fields: [websiteId], references: [id], onDelete: Cascade)
+  
+  // Product info
+  productCategory       ProductCategory
+  productName           String
+  modelId               String
+  productTitle          String
+  
+  // Seller info
+  sellerId              String
+  sellerScale           SellerScale
+  sellerTxnCount        Int
+  sellerTxnCount30d     Int
+  sellerAccountAgeMonths Int
+  sellerVerified        Boolean
+  authorizedDealer      Boolean
+  
+  // Seller metrics
+  orderSuccessRatePct   Float
+  refundRatePct         Float
+  lateDeliveryRatePct   Float
+  avgResponseTimeHours  Float
+  complaintReportCount  Int
+  codOrderSharePct      Float
+  
+  // Product details
+  productCondition      ProductCondition
+  warrantyMonths        Int
+  listingAgeDays        Int
+  stockQuantity         Int
+  productIssueRatePct   Float
+  
+  // Reviews
+  reviewCountAllTime    Int
+  reviewCountLast30d    Int
+  productRatingAllTime  Float?
+  productRatingLast30d  Float?
+  recommendToOthers     String
+  verifiedPurchaseReviewPct Float?
+  earlyReviewBurstPct   Float?
+  
+  // Pricing
+  modelAvgPriceBdt      Float
+  priceDeviationPct     Float
+  productPriceBdt       Float
+  pricePercentileWithinModel Float
+  
+  // Risk
+  isSuspiciousListing   Boolean
+  riskScore             Float
+  riskLevel             RiskLevel
+  riskColor             String
+  suspiciousProbability Float
+  
+  // Computed
+  shippingCostBdt       Float
+  totalCostBdt          Float
+  deliveryTimeDays      Int
+  warrantyDays          Int
+  returnPolicyDays      Int
+  stockAvailable        Boolean
+  
+  createdAt             DateTime      @default(now())
+  updatedAt             DateTime      @updatedAt
+  
+  @@index([websiteId, productCategory])
+  @@index([websiteId, riskLevel])
+  @@index([websiteId, isSuspiciousListing])
+  @@index([websiteId, createdAt])
+}
+
+model GenerationLog {
+  id          String   @id @default(cuid())
+  websiteId   String
+  website     Website  @relation(fields: [websiteId], references: [id], onDelete: Cascade)
+  rowsAdded   Int
+  success     Boolean
+  error       String?
+  createdAt   DateTime @default(now())
+  
+  @@index([websiteId, createdAt])
+}

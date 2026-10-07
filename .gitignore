@@ -1,0 +1,28 @@
+# Dependencies
+node_modules
+
+# Next.js
+.next
+out
+next-env.d.ts
+*.tsbuildinfo
+
+# Python
+__pycache__
+*.pyc
+
+# Logs
+*.log
+npm-debug.log*
+
+# Local env files
+.env*.local
+
+# Editor / OS
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+
+# Python virtualenv
+.venv

@@ -1,8 +1,32 @@
 {
-  "name": "mfs-marketplace-demo",
+  "name": "upay-smart-store-monorepo",
   "private": true,
+  "version": "1.0.0",
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
   "scripts": {
-    "dev": "bash scripts/dev.sh",
-    "start": "bash scripts/dev.sh"
+    "dev": "npm run dev --workspaces --if-present",
+    "dev:aggregator": "next dev -p 3000",
+    "build:aggregator": "next build",
+    "dev:web1": "npm run dev --workspace=apps/web1",
+    "dev:web2": "npm run dev --workspace=apps/web2",
+    "dev:web3": "npm run dev --workspace=apps/web3",
+    "dev:worker": "npm run dev --workspace=packages/worker",
+    "build": "npm run build --workspaces --if-present",
+    "build:shared": "npm run build --workspace=packages/shared",
+    "build:worker": "npm run build --workspace=packages/worker",
+    "db:generate": "npm run db:generate --workspace=packages/shared",
+    "db:push": "npm run db:push --workspace=packages/shared",
+    "db:studio": "npm run db:studio --workspace=packages/shared",
+    "db:seed": "npm run db:seed --workspace=packages/shared",
+    "lint": "npm run lint --workspaces --if-present",
+    "worker:start": "npm run start --workspace=packages/worker"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "oxlint": "^1.81.0",
+    "typescript": "^5.9.0"
   }
 }

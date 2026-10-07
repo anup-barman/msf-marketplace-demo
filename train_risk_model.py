@@ -40,10 +40,10 @@ from new_model.seller_risk_model import (
 def main():
     parser = argparse.ArgumentParser(description="Train seller risk model and score store listings")
     parser.add_argument("--input", default="risk_training_100000.csv", help="Labelled training CSV")
-    parser.add_argument("--store-input", default="store_listings_3000.csv", help="Store listing CSV to score")
-    parser.add_argument("--model-out", default="server/risk_model.joblib", help="Joblib model output path")
-    parser.add_argument("--model-json", default="server/risk-model.json", help="JSON model metadata output path")
-    parser.add_argument("--scores-out", default="server/risk-scores.json", help="JSON risk scores output path")
+    parser.add_argument("--store-input", default="data/store_listings_3000.csv", help="Store listing CSV to score")
+    parser.add_argument("--model-out", default="data/risk_model.joblib", help="Joblib model output path")
+    parser.add_argument("--model-json", default="data/risk-model.json", help="JSON model metadata output path")
+    parser.add_argument("--scores-out", default="data/risk-scores.json", help="JSON risk scores output path")
     parser.add_argument("--seed", type=int, default=42, help="Random seed")
     args = parser.parse_args()
 
